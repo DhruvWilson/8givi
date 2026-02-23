@@ -1,4 +1,4 @@
-name: DhruvWilsonRDP – Optimized Performance
+name: DhruvWilsonRDP – Fixed Version
 
 on:
   workflow_dispatch:
@@ -17,47 +17,27 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Optimize Windows for Performance
-        run: |
-          # Disable visual effects for better performance
-          Set-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\VisualEffects" -Name "VisualFXSetting" -Value 2
-          
-          # Disable animations
-          Set-ItemProperty -Path "HKCU:\Control Panel\Desktop" -Name "UserPreferencesMask" -Value ([byte[]](0x90,0x12,0x03,0x80,0x10,0x00,0x00,0x00))
-          
-          # Set performance options to "Adjust for best performance"
-          $path = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile"
-          if (Test-Path $path) {
-            Set-ItemProperty -Path $path -Name "SystemResponsiveness" -Value 0
-            Set-ItemProperty -Path $path -Name "NetworkThrottlingIndex" -Value 0xFFFFFFFF
-          }
-          
-          # Disable unnecessary services
-          $services = @("SysMain", "WSearch", "diagtrack", "dmwappushservice")
-          foreach ($service in $services) {
-            Stop-Service $service -Force -ErrorAction SilentlyContinue
-            Set-Service $service -StartupType Disabled -ErrorAction SilentlyContinue
-          }
-          
-          Write-Host "Performance optimizations applied"
-
-      - name: Pre-Create Directories
+      - name: Create User and Directories
         run: |
           $sec = ConvertTo-SecureString "Rdp!9Xq#2025" -AsPlainText -Force
           $username = "DhruvWilson"
           
+          # Create user if doesn't exist
           if (-not (Get-LocalUser -Name $username -ErrorAction SilentlyContinue)) {
             New-LocalUser -Name $username -Password $sec -AccountNeverExpires
-            Add-LocalGroupMember Administrators $username
+            Add-LocalGroupMember -Group "Administrators" -Member $username
+            Write-Host "User $username created"
           }
           
-          New-Item -Path "C:\Users\$username\AppData\Local\Google\Chrome\User Data" -ItemType Directory -Force
+          # Create directories
+          New-Item -Path "C:\Users\$username\Desktop" -ItemType Directory -Force
           New-Item -Path "C:\Users\$username\Downloads" -ItemType Directory -Force
           New-Item -Path "C:\PersistentData" -ItemType Directory -Force
+          New-Item -Path "C:\Users\$username\AppData\Local\Google\Chrome\User Data" -ItemType Directory -Force
           
-          Write-Host "Directories created successfully for $username"
+          Write-Host "Directories created"
 
-      - name: Restore Session Cache
+      - name: Restore Cache
         uses: actions/cache/restore@v4
         with:
           path: |
@@ -68,141 +48,78 @@ jobs:
           restore-keys: |
             rdp-v4-
 
-      - name: Start Tailscale (Optimized)
+      - name: Install Tailscale
         run: |
           Write-Host "Downloading Tailscale..."
-          Invoke-WebRequest -Uri "https://pkgs.tailscale.com/stable/tailscale-setup-1.82.0-amd64.msi" -OutFile "$env:TEMP\tailscale.msi"
+          $url = "https://pkgs.tailscale.com/stable/tailscale-setup-1.82.0-amd64.msi"
+          $output = "$env:TEMP\tailscale.msi"
+          Invoke-WebRequest -Uri $url -OutFile $output
+          
           Write-Host "Installing Tailscale..."
-          Start-Process msiexec.exe -Wait -ArgumentList "/i","$env:TEMP\tailscale.msi","/quiet","/norestart"
-          Write-Host "Connecting to Tailscale with optimized settings..."
+          Start-Process msiexec.exe -Wait -ArgumentList "/i", "`"$output`"", "/quiet", "/norestart"
           
-          # Connect with optimized DNS and performance settings
-          & "$env:ProgramFiles\Tailscale\tailscale.exe" up `
-            --authkey "${{ inputs.ts_authkey }}" `
-            --hostname "DhruvWilsonRDP" `
-            --accept-dns=false `
-            --advertise-tags=tag:server `
-            --reset
+          # Wait for installation to complete
+          Start-Sleep -Seconds 10
           
-          Write-Host "Tailscale connected successfully"
+          Write-Host "Connecting to Tailscale..."
+          & "C:\Program Files\Tailscale\tailscale.exe" up --authkey "${{ inputs.ts_authkey }}" --hostname "DhruvWilsonRDP"
           
-          # Get and display IP
-          $ip = & "$env:ProgramFiles\Tailscale\tailscale.exe" ip -4 | Select-Object -First 1
+          # Get IP
+          $ip = & "C:\Program Files\Tailscale\tailscale.exe" ip -4
           Write-Host "Tailscale IP: $ip"
 
-      - name: Setup RDP (Optimized)
+      - name: Enable RDP
         run: |
           # Enable RDP
-          Set-ItemProperty "HKLM:\System\CurrentControlSet\Control\Terminal Server" -Name fDenyTSConnections -Value 0
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0
           
-          # Optimize RDP performance
-          Set-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp" -Name "MaxConnectionTime" -Value 0
-          Set-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp" -Name "MaxDisconnectionTime" -Value 0
-          Set-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp" -Name "MaxIdleTime" -Value 0
-          
-          # Enable firewall rules
+          # Enable firewall rule
           Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
           
-          # Set RDP to use less bandwidth
-          Set-ItemProperty "HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services" -Name "ColorDepth" -Value 1  # 16-bit color
+          # Set user password never expires
+          $username = "DhruvWilson"
+          Set-LocalUser -Name $username -PasswordNeverExpires $true
           
-          Write-Host "Optimized RDP Setup Complete"
+          Write-Host "RDP Enabled"
 
-      - name: Install Performance Tools
+      - name: Show Connection Info
         run: |
-          # Install Chrome with optimization flags
-          $chromeInstaller = "$env:TEMP\chrome_installer.exe"
-          Invoke-WebRequest -Uri "https://dl.google.com/chrome/install/latest/chrome_installer.exe" -OutFile $chromeInstaller
-          Start-Process $chromeInstaller -ArgumentList "/silent", "/install", "--chrome-shortcut=0" -Wait
-          
-          # Install CPU limiting tool (optional - helps prevent throttling)
-          # This creates a simple CPU limiter script
-          $cpuLimiterScript = @"
-          `$cpuCores = (Get-CimInstance Win32_ComputerSystem).NumberOfLogicalProcessors
-          Write-Host "System has `$cpuCores logical processors"
-          Write-Host "Monitoring CPU usage every 60 seconds..."
-          
-          while (`$true) {
-            `$cpuLoad = Get-Counter '\Processor(_Total)\% Processor Time' | Select-Object -ExpandProperty CounterSamples | Select-Object -ExpandProperty CookedValue
-            Write-Host "CPU Load: `$([math]::Round(`$cpuLoad, 2))%"
-            Start-Sleep -Seconds 60
+          $ip = & "C:\Program Files\Tailscale\tailscale.exe" ip -4 2>$null
+          if (-not $ip) {
+            $ip = "Waiting for Tailscale IP..."
           }
-"@
-          Set-Content -Path "C:\PersistentData\cpu_monitor.ps1" -Value $cpuLimiterScript
           
-          Write-Host "Performance tools installed"
-
-      - name: Get RDP Info
-        run: |
-          $ip = & "$env:ProgramFiles\Tailscale\tailscale.exe" ip -4 | Select-Object -First 1
-          Write-Host "==========================================="
-          Write-Host "RDP CONNECTION DETAILS:"
-          Write-Host "==========================================="
-          Write-Host "IP Address: $ip"
-          Write-Host "Username: DhruvWilson"
-          Write-Host "Password: Rdp!9Xq#2025"
-          Write-Host "==========================================="
-          Write-Host "PERFORMANCE TIPS:"
-          Write-Host "- In RDP client, set experience to 'Modem' or 'Low speed'"
-          Write-Host "- Disable wallpaper, animations, and visual styles"
-          Write-Host "- Use 16-bit color instead of 32-bit"
-          Write-Host "- Disable font smoothing and desktop composition"
-          Write-Host "==========================================="
+          Write-Host "=================================================="
+          Write-Host "    RDP CONNECTION DETAILS"
+          Write-Host "=================================================="
+          Write-Host "IP Address  : $ip"
+          Write-Host "Username    : DhruvWilson"
+          Write-Host "Password    : Rdp!9Xq#2025"
+          Write-Host "=================================================="
           Write-Host "Session will run for 6 hours"
-          Write-Host "==========================================="
+          Write-Host "Cancel job to save data"
+          Write-Host "=================================================="
 
-      - name: Performance Monitor & Keep Alive
+      - name: Keep Session Alive
         shell: powershell
         run: |
-          Write-Host "Starting performance-optimized session..."
+          $endTime = (Get-Date).AddHours(6)
           
-          # Start CPU monitor in background job
-          $job = Start-Job -ScriptBlock {
-            while ($true) {
-              $cpu = Get-Counter '\Processor(_Total)\% Processor Time' -ErrorAction SilentlyContinue
-              if ($cpu) {
-                $cpuValue = [math]::Round($cpu.CounterSamples.CookedValue, 2)
-                if ($cpuValue -gt 90) {
-                  Write-Host "WARNING: High CPU usage: $cpuValue%"
-                }
-              }
-              Start-Sleep -Seconds 30
-            }
-          }
-          
-          $totalMinutes = 360
-          $elapsedMinutes = 0
-          
-          while ($elapsedMinutes -lt $totalMinutes) {
-            $hoursRemaining = [math]::Floor(($totalMinutes - $elapsedMinutes) / 60)
-            $minutesRemaining = ($totalMinutes - $elapsedMinutes) % 60
+          while ((Get-Date) -lt $endTime) {
+            $remaining = $endTime - (Get-Date)
+            $hours = $remaining.Hours
+            $minutes = $remaining.Minutes
             
-            # Clear screen for cleaner output (optional)
-            # Clear-Host
+            Write-Host "[$(Get-Date -Format 'HH:mm:ss')] Session active - Time remaining: $hours hours $minutes minutes"
             
-            Write-Host "╔══════════════════════════════════════════════════════════╗"
-            Write-Host "║            DHRUVWILSON RDP - OPTIMIZED                  ║"
-            Write-Host "╠══════════════════════════════════════════════════════════╣"
-            Write-Host "║ Time: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
-            Write-Host "║ Elapsed: $elapsedMinutes minutes"
-            Write-Host "║ Remaining: $hoursRemaining hours $minutesRemaining minutes"
-            Write-Host "║ Status: ACTIVE - Performance Optimized"
-            Write-Host "║ RDP User: DhruvWilson"
-            Write-Host "╚══════════════════════════════════════════════════════════╝"
-            
-            # Lightweight sleep (shorter intervals feel more responsive)
-            for ($i = 0; $i -lt 12; $i++) {
-              Start-Sleep -Seconds 5
-              # Check if job has any high CPU warnings
-              Receive-Job $job
+            # Test Tailscale connection
+            $ip = & "C:\Program Files\Tailscale\tailscale.exe" ip -4 2>$null
+            if ($ip) {
+              Write-Host "Tailscale IP: $ip"
             }
             
-            $elapsedMinutes += 1
+            Start-Sleep -Seconds 60  # Check every minute
           }
-          
-          Stop-Job $job
-          Remove-Job $job
-          Write-Host "Maximum runtime reached. Session ending..."
 
       - name: Save Cache Always
         if: always()
